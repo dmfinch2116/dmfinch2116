@@ -1,0 +1,72 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tornado Tracker</title><link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14181f"><link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:#14181f;color:#e8ecf1;font:15px system-ui,sans-serif;padding-top:env(safe-area-inset-top)}
+header{display:flex;align-items:center;gap:8px;padding:10px 14px}
+h1{font-size:17px;margin:0;flex:1}#st{font-size:12px;opacity:.65}
+button{background:#2a3140;color:inherit;border:0;border-radius:8px;padding:8px 12px;font:inherit}
+#map{height:42vh;flex:none}
+nav{display:flex;gap:6px;padding:8px 14px}nav button{flex:1}nav .on{background:#d94141}
+#list{flex:1;overflow:auto;padding:0 14px calc(14px + env(safe-area-inset-bottom))}
+.c{background:#1d2330;border-radius:10px;padding:11px 12px;margin-bottom:8px;border-left:5px solid var(--k,#777)}
+.c b{display:block}.c small{opacity:.7;display:block;margin-top:3px}
+.badge{float:right;background:var(--k,#777);color:#111;font-weight:700;border-radius:6px;padding:1px 8px;font-size:13px}
+.empty{opacity:.6;text-align:center;padding:24px}
+</style></head><body>
+<header><h1>🌪️ Tornado Tracker</h1><span id="st"></span><button id="rf">↻</button></header>
+<div id="map"></div>
+<nav><button id="tw" class="on"></button><button id="tr"></button></nav>
+<div id="list"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const $=s=>document.querySelector(s),COL={0:'#4caf50',1:'#cddc39',2:'#ffc107',3:'#ff9800',4:'#f44336',5:'#d500f9'};
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dur=ms=>{const m=Math.max(0,Math.round(ms/6e4));return m>=60?Math.floor(m/60)+'h '+m%60+'m':m+' min'};
+const when=d=>new Date(d).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+const map=L.map('map',{zoomControl:false}).setView([38.5,-96],4);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12,attribution:'© OpenStreetMap'}).addTo(map);
+const wl=L.layerGroup().addTo(map),rl=L.layerGroup().addTo(map);
+let tab='w',W=[],R=[];
+function parse(a,b){
+  W=(a.features||[]).map(f=>{const p=f.properties,s=Date.parse(p.effective),e=Date.parse(p.ends||p.expires);
+    return{g:f.geometry,area:p.areaDesc,s,e,obs:(p.parameters?.tornadoDetection||[''])[0],threat:(p.parameters?.tornadoDamageThreat||[''])[0]}})
+    .sort((x,y)=>x.e-y.e);
+  R=(b.features||[]).filter(f=>/tornado/i.test(f.properties.typetext||'')&&!/funnel|waterspout/i.test(f.properties.typetext))
+    .map(f=>{const p=f.properties,m=(p.remark||'').match(/\bEF[- ]?([0-5])\b/i),c=f.geometry?.coordinates||[];
+      return{t:Date.parse(p.valid),city:p.city,county:p.county,st:p.state,ef:m?+m[1]:null,note:p.remark||'',ll:[c[1],c[0]]}})
+    .sort((x,y)=>y.t-x.t);
+}
+function draw(){
+  wl.clearLayers();rl.clearLayers();const now=Date.now(),L2=[];
+  W.forEach(w=>{if(w.g)L.geoJSON(w.g,{style:{color:w.threat?'#ff1744':'#ff5252',weight:2,fillOpacity:.25}}).addTo(wl)});
+  R.forEach(r=>{if(r.ll[0])L.circleMarker(r.ll,{radius:7,color:'#111',weight:1,fillColor:COL[r.ef]||'#9e9e9e',fillOpacity:.9})
+    .bindPopup(`${esc(r.city)}, ${esc(r.st)}<br>${when(r.t)}`).addTo(rl)});
+  $('#tw').textContent=`Active warnings (${W.length})`;$('#tr').textContent=`Last 7 days (${R.length})`;
+  const h=tab==='w'?W.map(w=>`<div class="c" style="--k:#ff5252"><span class="badge">${w.obs==='OBSERVED'?'CONFIRMED':'RADAR'}</span><b>${esc(w.area)}</b>
+    <small>${when(w.s)} → ${when(w.e)} · ${w.e>now?dur(w.e-now)+' left':'expired'} (window ${dur(w.e-w.s)})</small>${w.threat?`<small>Damage threat: ${esc(w.threat)}</small>`:''}</div>`)
+    :R.map(r=>`<div class="c" style="--k:${COL[r.ef]||'#9e9e9e'}"><span class="badge">${r.ef==null?'Unrated':'EF'+r.ef}</span><b>${esc(r.city)}, ${esc(r.st)}</b>
+    <small>${when(r.t)} · ${esc(r.county)} Co.</small>${r.note?`<small>${esc(r.note.slice(0,140))}</small>`:''}</div>`);
+  $('#list').innerHTML=h.join('')||'<div class="empty">Nothing to show right now.</div>';
+  (tab==='w'?wl:rl).getLayers().length&&map.fitBounds(L.featureGroup((tab==='w'?wl:rl).getLayers()).getBounds(),{maxZoom:8,padding:[20,20]});
+}
+async function load(){
+  $('#st').textContent='Loading…';
+  try{
+    const [a,b]=await Promise.all([
+      fetch('https://api.weather.gov/alerts/active?event=Tornado%20Warning').then(r=>r.json()),
+      fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=168').then(r=>r.json())]);
+    localStorage.tt=JSON.stringify({a,b,t:Date.now()});parse(a,b);$('#st').textContent='Updated '+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  }catch(e){
+    try{const c=JSON.parse(localStorage.tt);parse(c.a,c.b);$('#st').textContent='Offline · cached '+when(c.t)}catch{$('#st').textContent='Load failed'}
+  }
+  draw();
+}
+$('#tw').onclick=()=>{tab='w';$('#tw').className='on';$('#tr').className='';draw()};
+$('#tr').onclick=()=>{tab='r';$('#tr').className='on';$('#tw').className='';draw()};
+$('#rf').onclick=load;setInterval(load,3e5);load();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+</script></body></html>
