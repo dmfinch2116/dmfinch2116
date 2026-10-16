@@ -32,7 +32,7 @@ select:disabled{opacity:.45}input::placeholder{color:#5b6b88}
 .badge{float:right;background:var(--k,#777);color:#0a1220;font-weight:700;border-radius:10px;padding:2px 10px;font-size:13px}
 .c .ok{color:#7fe3a0}.c .wt{color:#f0b24c}.empty{color:var(--mut);text-align:center;padding:24px}
 .seg{display:flex;gap:8px;margin-bottom:14px}.seg button{flex:1;padding:12px;border-radius:16px;border:1px solid var(--line);background:var(--in);color:var(--mut);font:inherit}.seg .on{background:#17294a;color:#fff;border-color:#3ed1e0}
-#oi{width:100%;border-radius:20px;background:#fff;min-height:200px}.lnk{display:block;text-align:center;margin:14px 0;color:var(--teal)}
+#omap{height:52vh;min-height:320px;border-radius:28px;border:1px solid var(--line)}.cap{color:var(--mut);font-size:13px;margin:10px 2px 0}.hd .eye{font-size:10px;letter-spacing:.16em;white-space:nowrap}.lnk{display:block;text-align:center;margin:14px 0;color:var(--teal)}
 nav{position:fixed;left:0;right:0;bottom:0;display:flex;background:#111b30;border-top:1px solid var(--line);padding:10px 8px calc(10px + env(safe-area-inset-bottom));z-index:1000}
 nav button{flex:1;background:0;border:0;color:var(--mut);font:inherit;font-size:14px;display:flex;flex-direction:column;align-items:center;gap:6px}nav button i{font-style:normal;font-size:22px}nav .on{color:var(--teal)}
 .hide{display:none!important}
@@ -50,9 +50,10 @@ nav button{flex:1;background:0;border:0;color:var(--mut);font:inherit;font-size:
 <label>State<select id="sel"><option value="">All states</option></select></label></div>
 <div class="row"><label style="flex:1.6">Search<input id="q" type="search" placeholder="City, county, state…"></label><label>Sort<select id="sort"><option value="new">Newest</option><option value="ef">Strongest</option><option value="len">Longest path</option></select></label></div></section>
 <section id="pm"><div class="sec"><div><h2 id="mt">Tornado map</h2><p>Tap a marker or track for details</p></div><span class="pill">PRELIMINARY</span></div><div id="map"></div><div id="list"></div></section>
-<section id="po" class="hide"><div class="sec"><div><h2>SPC outlooks</h2><p>Convective outlook, categorical risk</p></div></div>
+<section id="po" class="hide"><div class="sec"><div><h2>SPC outlooks</h2><p>Official NOAA/SPC risk areas, updated through the day</p></div></div>
 <div class="seg" id="days"><button class="on" data-d="1">Day 1</button><button data-d="2">Day 2</button><button data-d="3">Day 3</button></div>
-<img id="oi" alt="SPC convective outlook"><a class="lnk" id="ol" target="_blank" rel="noopener">Open full outlook on spc.noaa.gov ↗</a></section>
+<div class="seg" id="otype"><button class="on" data-t="c">Categorical</button><button data-t="t">Tornado %</button></div>
+<div id="omap"></div><p class="cap">Colors follow SPC’s standard scale. Categorical risk runs from Thunderstorm, Marginal, Slight, Enhanced and Moderate up to High.</p><a class="lnk" id="ol" target="_blank" rel="noopener">Open full outlook on spc.noaa.gov ↗</a></section>
 <div id="toast"></div>
 <nav><button data-t="r" class="on"><i>◉</i>Reports</button><button data-t="a"><i>⚠</i>Official alerts</button><button data-t="o"><i>☁</i>SPC outlooks</button></nav>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
@@ -159,13 +160,27 @@ async function load(){
 }
 function go(t){tab=t;document.querySelectorAll('nav button').forEach(b=>b.classList.toggle('on',b.dataset.t===t));
   const o=t==='o';['#stat','#pf','#pm'].forEach(s=>$(s).classList.toggle('hide',o));$('#po').classList.toggle('hide',!o);
-  if(o)outlook(+document.querySelector('#days .on').dataset.d);
+  if(o)openOutlook();
   else{const a=t==='a';[tl,cg,sel].forEach(g=>a?map.removeLayer(g):map.addLayer(g));a?map.addLayer(wl):map.removeLayer(wl);map.invalidateSize();render(true)}
   window.scrollTo(0,0)}
-function outlook(d){document.querySelectorAll('#days button').forEach(b=>b.classList.toggle('on',+b.dataset.d===d));
-  $('#oi').src=`https://www.spc.noaa.gov/products/outlook/day${d}otlk.gif?t=${Math.floor(Date.now()/36e5)}`;$('#ol').href=`https://www.spc.noaa.gov/products/outlook/day${d}otlk.html`}
+const MS='https://mapservices.weather.noaa.gov/vector/rest/services/outlooks/SPC_wx_outlks/MapServer',OL={1:{c:1,t:3},2:{c:9,t:11},3:{c:17,t:19}};
+let oD=1,oT='c',om,oimg;
+function oSync(){document.querySelectorAll('#days button').forEach(b=>b.classList.toggle('on',+b.dataset.d===oD));
+  document.querySelectorAll('#otype button').forEach(b=>b.classList.toggle('on',b.dataset.t===oT));
+  document.querySelector('#otype [data-t=t]').textContent=oD===3?'Probability':'Tornado %';
+  $('#ol').href=`https://www.spc.noaa.gov/products/outlook/day${oD}otlk.html`;if(om)oUpdate()}
+function oUpdate(){const b=om.getBounds(),z=om.getSize(),c=L.CRS.EPSG3857,p=c.project(b.getSouthWest()),q=c.project(b.getNorthEast());
+  const url=`${MS}/export?bbox=${p.x},${p.y},${q.x},${q.y}&bboxSR=3857&imageSR=3857&size=${z.x},${z.y}&format=png32&transparent=true&layers=show:${OL[oD][oT]}&f=image&_=${Math.floor(Date.now()/3e5)}`;
+  const n=L.imageOverlay(url,b,{opacity:.78}).addTo(om);n.on('load',()=>{if(oimg)om.removeLayer(oimg);oimg=n}).on('error',()=>{om.removeLayer(n);toast('Outlook layer failed to load')})}
+function openOutlook(){
+  if(!om){om=L.map('omap',{zoomControl:false});
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxNativeZoom:16,maxZoom:10,attribution:'Tiles © Esri · Outlooks: NOAA/NWS SPC'}).addTo(om);
+    om.createPane('lab').style.zIndex=450;
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{pane:'lab',maxNativeZoom:16,maxZoom:10}).addTo(om);
+    L.control.zoom({position:'bottomright'}).addTo(om);om.fitBounds([[24,-125],[50,-66]],{animate:false});om.on('moveend',oUpdate)}
+  om.invalidateSize();oUpdate()}
 document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t));
-$('#days').onclick=e=>{if(e.target.dataset.d)outlook(+e.target.dataset.d)};outlook(1);
+$('#days').onclick=e=>{if(e.target.dataset.d){oD=+e.target.dataset.d;oSync()}};$('#otype').onclick=e=>{if(e.target.dataset.t){oT=e.target.dataset.t;oSync()}};oSync();
 $('#list').onclick=e=>{const c=e.target.closest('.c');if(!c||e.target.closest('.sh'))return;
   c.dataset.i!=null?focus(render.FI[+c.dataset.i]):focus({k:'w',layer:render.FW[+c.dataset.w]?.layer})};
 $('#win').onchange=()=>load.noData?load():render(true);$('#sort').onchange=()=>render(false);$('#sel').onchange=()=>render(true);$('#q').oninput=()=>render(true);
