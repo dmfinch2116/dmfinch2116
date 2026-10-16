@@ -70,7 +70,8 @@ function dseg(p,a,b){const dx=b[1]-a[1],dy=b[0]-a[0],l=dx*dx+dy*dy;let t=l?((p[1
 const dTrack=(p,t)=>Math.min(...t.paths.map(P=>P.length<2?km(p,P[0]):Math.min(...P.slice(1).map((c,i)=>dseg(p,P[i],c)))));
 const toast=m=>{const t=$('#toast');t.textContent=m;t.classList.add('on');setTimeout(()=>t.classList.remove('on'),2200)};
 /* ---- map ---- */
-const dark=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{subdomains:'abcd',maxZoom:14,attribution:'© OpenStreetMap © CARTO'});
+const esri=p=>L.tileLayer(`https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/${p}/MapServer/tile/{z}/{y}/{x}`,{maxNativeZoom:16,maxZoom:14,attribution:'Tiles © Esri'});
+const dark=L.layerGroup([esri('World_Dark_Gray_Base'),esri('World_Dark_Gray_Reference')]);
 const light=L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:14,attribution:'© OpenStreetMap'});
 const radar=L.tileLayer('https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png?m={m}',{opacity:.65,maxZoom:14,maxNativeZoom:12,m:()=>Math.floor(Date.now()/3e5),attribution:'Radar: IEM/NEXRAD'});
 const map=L.map('map',{zoomControl:false,layers:[dark],renderer:L.canvas({tolerance:14})}).setView([38.5,-96],4);
