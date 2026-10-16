@@ -127,7 +127,7 @@ function render(fit){
   cg.addLayers(dots);
   const nt=FI.filter(i=>i.k==='t').length,A=tab==='a';
   $('#sl').textContent=A?'Official alerts':'Tornadoes';$('#sn').textContent=A?FW.length:FI.length;
-  $('#ss').textContent=A?'active tornado warnings':`${FI.length===1?'tornado':'tornadoes'} in selected period · ${nt} surveyed`;
+  $('#ss').textContent=A?'active tornado warnings':`${FI.length===1?'tornado':'tornadoes'} in selected period · ${nt} surveyed`+(load.noData?' · ⚠ limited data: data build not run':'');
   $('#mt').textContent=A?'Warning map':'Tornado map';$('#win').disabled=A;$('#sort').disabled=A;
   $('#list').innerHTML=(A?FW.map((w,i)=>`<div class="c" data-w="${i}" style="--k:#ff5252"><span class="badge">${w.obs==='OBSERVED'?'CONFIRMED':'RADAR'}</span><b>${esc(w.area)}</b>
     <small>${when(w.s)} → ${when(w.e)} · ${w.e>now?dur(w.e-now)+' left':'expired'} (window ${dur(w.e-w.s)})</small>${w.threat?`<small>Damage threat: ${esc(w.threat)}</small>`:''}</div>`)
@@ -147,7 +147,8 @@ async function load(){
     fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=6').then(r=>r.json())]);
   const sd=S.value;let live=O.value?.features?parseReps(O.value):[];
   if(!sd){note=' · survey data not built yet — run the “Update tornado data” workflow once';
-    try{live=parseReps(await fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=72').then(r=>r.json()))}catch{}}
+    try{live=parseReps(await fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours='+Math.min(168,+$('#win').value)).then(r=>r.json()))}catch{}}
+  load.noData=!sd;
   const seen=new Set(),reps=[...(sd?.reports||[]),...live].filter(r=>{const k=r.t+'|'+(r.ll[0]||0).toFixed(3)+'|'+(r.ll[1]||0).toFixed(3);return seen.has(k)?0:seen.add(k)});
   if(A.value?.features)W=parseWarn(A.value);
   $('#st').textContent=(A.value?.features&&O.value?.features?'Updated ':'Partial ')+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
@@ -167,7 +168,7 @@ document.querySelectorAll('nav button').forEach(b=>b.onclick=()=>go(b.dataset.t)
 $('#days').onclick=e=>{if(e.target.dataset.d)outlook(+e.target.dataset.d)};outlook(1);
 $('#list').onclick=e=>{const c=e.target.closest('.c');if(!c||e.target.closest('.sh'))return;
   c.dataset.i!=null?focus(render.FI[+c.dataset.i]):focus({k:'w',layer:render.FW[+c.dataset.w]?.layer})};
-$('#win').onchange=()=>render(true);$('#sort').onchange=()=>render(false);$('#sel').onchange=()=>render(true);$('#q').oninput=()=>render(true);
+$('#win').onchange=()=>load.noData?load():render(true);$('#sort').onchange=()=>render(false);$('#sel').onchange=()=>render(true);$('#q').oninput=()=>render(true);
 $('#rf').onclick=load;setInterval(load,3e5);load();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
 </script></body></html>
