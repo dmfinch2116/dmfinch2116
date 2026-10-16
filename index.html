@@ -1,0 +1,89 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Tornado Tracker</title><link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#14181f"><link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css">
+<style>
+*{box-sizing:border-box}html,body{height:100%;margin:0}
+body{display:flex;flex-direction:column;background:#14181f;color:#e8ecf1;font:15px system-ui,sans-serif;padding-top:env(safe-area-inset-top)}
+header{display:flex;align-items:center;gap:8px;padding:10px 14px}
+h1{font-size:17px;margin:0;flex:1}#st{font-size:12px;opacity:.65}
+button{background:#2a3140;color:inherit;border:0;border-radius:8px;padding:8px 12px;font:inherit}
+#map{height:42vh;flex:none}
+nav{display:flex;gap:6px;padding:8px 14px}nav button{flex:1}nav .on{background:#d94141}
+#list{flex:1;overflow:auto;padding:0 14px calc(14px + env(safe-area-inset-bottom))}
+.c{background:#1d2330;border-radius:10px;padding:11px 12px;margin-bottom:8px;border-left:5px solid var(--k,#777)}
+.c b{display:block}.c small{opacity:.7;display:block;margin-top:3px}
+.badge{float:right;background:var(--k,#777);color:#111;font-weight:700;border-radius:6px;padding:1px 8px;font-size:13px}
+.ok{color:#8fd694}.wt{color:#ffb74d}.empty{opacity:.6;text-align:center;padding:24px}
+</style></head><body>
+<header><h1>🌪️ Tornado Tracker</h1><span id="st"></span><button id="rf">↻</button></header>
+<div id="map"></div>
+<nav><button id="tw" class="on"></button><button id="tr"></button></nav>
+<div id="list"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+const $=s=>document.querySelector(s),COL={0:'#4caf50',1:'#cddc39',2:'#ffc107',3:'#ff9800',4:'#f44336',5:'#d500f9'};
+const DAT='https://services.dat.noaa.gov/arcgis/rest/services/nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1/query';
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const dur=ms=>{const m=Math.max(0,Math.round(ms/6e4));return m>=60?Math.floor(m/60)+'h '+m%60+'m':m+' min'};
+const when=d=>new Date(d).toLocaleString([],{month:'short',day:'numeric',hour:'numeric',minute:'2-digit'});
+const efOf=s=>{const m=String(s||'').match(/EF\s*-?\s*([0-5])/i);return m?+m[1]:null};
+const km=(a,b)=>{const k=Math.PI/180,x=(b[1]-a[1])*k*Math.cos((a[0]+b[0])*k/2),y=(b[0]-a[0])*k;return 6371*Math.hypot(x,y)};
+function dseg(p,a,b){const dx=b[1]-a[1],dy=b[0]-a[0],l=dx*dx+dy*dy;let t=l?((p[1]-a[1])*dx+(p[0]-a[0])*dy)/l:0;t=Math.max(0,Math.min(1,t));return km(p,[a[0]+t*dy,a[1]+t*dx])}
+const dTrack=(p,t)=>Math.min(...t.paths.map(P=>P.length<2?km(p,P[0]):Math.min(...P.slice(1).map((c,i)=>dseg(p,P[i],c)))));
+const map=L.map('map',{zoomControl:false,renderer:L.canvas({tolerance:14})}).setView([38.5,-96],4);
+L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:12,attribution:'© OpenStreetMap'}).addTo(map);
+const wl=L.featureGroup().addTo(map),tl=L.featureGroup().addTo(map);
+let tab='w',W=[],I=[],note='';
+function parseWarn(a){W=(a.features||[]).map(f=>{const p=f.properties;return{g:f.geometry,area:p.areaDesc,s:Date.parse(p.effective),e:Date.parse(p.ends||p.expires),
+  obs:(p.parameters?.tornadoDetection||[''])[0],threat:(p.parameters?.tornadoDamageThreat||[''])[0]}}).sort((x,y)=>x.e-y.e)}
+function parseReps(b){return(b.features||[]).filter(f=>/tornado/i.test(f.properties.typetext||'')&&!/funnel|waterspout/i.test(f.properties.typetext)).map(f=>{
+  const p=f.properties,c=f.geometry?.coordinates||[];return{t:Date.parse(p.valid),city:p.city,county:p.county,st:p.state,ef:efOf(p.remark),note:p.remark||'',ll:[c[1],c[0]]}})}
+function parseTracks(j){return(j.features||[]).map(f=>{const a=f.attributes;return{id:a.event_id,s:a.starttime||a.stormdate,e:a.endtime,len:a.length>0?a.length:null,ef:efOf(a.efscale),raw:a.efscale,
+  paths:(f.geometry?.paths||[]).map(p=>p.map(c=>[c[1],c[0]])),reps:[]}}).filter(t=>t.paths.length&&/EF/i.test(t.raw||''))}
+function merge(reps,tracks){const loose=[];
+  reps.forEach(r=>{if(!r.ll[0]){return}let best=null,bd=8;
+    tracks.forEach(t=>{const lo=(t.s||0)-72e5,hi=(t.e||t.s||0)+72e5;if(r.t<lo||r.t>hi)return;const d=dTrack(r.ll,t);if(d<bd){bd=d;best=t}});
+    best?best.reps.push(r):loose.push(r)});
+  I=[...tracks.map(t=>({k:'t',t:t.s,d:t})),...loose.map(r=>({k:'r',t:r.t,d:r}))].sort((a,b)=>b.t-a.t)}
+function popup(it){const d=it.d;if(it.k==='r')return`<b>${esc(d.city)}, ${esc(d.st)}</b><br>${when(d.t)}<br>${d.ef==null?'Unrated':'EF'+d.ef} · live report, awaiting survey<br>${esc(d.note.slice(0,160))}`;
+  const r=d.reps[0];return`<b>${d.ef==null?'EF?':'EF'+d.ef} · NWS surveyed</b>${r?'<br>'+esc(r.city)+', '+esc(r.st):''}<br>${when(d.s)}${d.e?' → '+when(d.e)+'<br>On ground: '+dur(d.e-d.s):''}${d.len?'<br>Path length: '+d.len.toFixed(1)+' mi':''}<br>${d.reps.length} matched report(s)<br><small>Preliminary (NWS DAT)</small>`}
+function focus(it){if(it.layer){it.k==='t'?map.fitBounds(it.layer.getBounds(),{padding:[30,30],maxZoom:12}):map.setView(it.d.ll,10);it.layer.openPopup()}}
+function draw(){
+  wl.clearLayers();tl.clearLayers();const now=Date.now();
+  W.forEach(w=>{if(w.g)w.layer=L.geoJSON(w.g,{style:{color:w.threat?'#ff1744':'#ff5252',weight:2,fillOpacity:.25}}).addTo(wl)});
+  I.forEach(it=>{const c=COL[it.d.ef]||'#9e9e9e';
+    it.layer=it.k==='t'?L.polyline(it.d.paths,{color:c,weight:6,opacity:.9}):L.circleMarker(it.d.ll,{radius:7,color:'#111',weight:1,fillColor:c,fillOpacity:.9});
+    it.layer.bindPopup(()=>popup(it)).on('click',()=>focus(it));if(it.k==='r'?it.d.ll[0]:1)it.layer.addTo(tl)});
+  const nt=I.filter(i=>i.k==='t').length;
+  $('#tw').textContent=`Warnings (${W.length})`;$('#tr').textContent=`Tornadoes 7d (${I.length})`;
+  $('#list').innerHTML=(tab==='w'?W.map(w=>`<div class="c" style="--k:#ff5252"><span class="badge">${w.obs==='OBSERVED'?'CONFIRMED':'RADAR'}</span><b>${esc(w.area)}</b>
+    <small>${when(w.s)} → ${when(w.e)} · ${w.e>now?dur(w.e-now)+' left':'expired'} (window ${dur(w.e-w.s)})</small>${w.threat?`<small>Damage threat: ${esc(w.threat)}</small>`:''}</div>`)
+  :[`<div class="empty" style="padding:4px">${nt} surveyed · ${I.length-nt} awaiting survey${note}</div>`,...I.map((it,i)=>{const d=it.d,t=it.k==='t',r=t?d.reps[0]:d;
+    return`<div class="c" data-i="${i}" style="--k:${COL[d.ef]||'#9e9e9e'}"><span class="badge">${d.ef==null?'Unrated':'EF'+d.ef}</span>
+    <b>${r?esc(r.city)+', '+esc(r.st):'Surveyed track'}</b><small>${when(it.t)}${t&&d.e?' · '+dur(d.e-d.s)+' on ground':''}</small>
+    <small class="${t?'ok':'wt'}">${t?'✔ NWS surveyed'+(d.len?' · '+d.len.toFixed(1)+' mi path':'')+(d.reps.length?' · '+d.reps.length+' report(s)':''):'● Live report · awaiting survey'}</small></div>`})]).join('')||'<div class="empty">Nothing to show right now.</div>';
+}
+function view(){const g=tab==='w'?wl:tl;if(g.getLayers().length)map.fitBounds(g.getBounds(),{maxZoom:8,padding:[20,20]})}
+async function load(){
+  $('#st').textContent='Loading…';note='';let a,b,j;
+  const since=new Date(Date.now()-7*864e5).toISOString().slice(0,19).replace('T',' ');
+  const q=`${DAT}?where=${encodeURIComponent("stormdate >= timestamp '"+since+"'")}&outFields=event_id,stormdate,starttime,endtime,length,efscale&outSR=4326&f=json`;
+  const [A,B,J]=await Promise.allSettled([
+    fetch('https://api.weather.gov/alerts/active?event=Tornado%20Warning').then(r=>r.json()),
+    fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=168').then(r=>r.json()),
+    fetch(q).then(r=>r.json())]);
+  const c=JSON.parse(localStorage.tt||'{}');
+  a=A.value||c.a||{};b=B.value||c.b||{};j=J.value?.features?J.value:(c.j||{});
+  if(!J.value?.features)note=' · survey data unavailable';
+  if(A.value&&B.value)localStorage.tt=JSON.stringify({a,b,j,t:Date.now()});
+  $('#st').textContent=(A.value&&B.value?'Updated ':'Cached ')+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
+  parseWarn(a);merge(parseReps(b),parseTracks(j));draw();if(!load.once){load.once=1;view()}
+}
+const sw=t=>{tab=t;$('#tw').className=t==='w'?'on':'';$('#tr').className=t==='r'?'on':'';tab=t==='w'?'w':'t';draw();view()};
+$('#tw').onclick=()=>sw('w');$('#tr').onclick=()=>sw('r');
+$('#list').onclick=e=>{const c=e.target.closest('.c[data-i]');if(c)focus(I[+c.dataset.i])};
+$('#rf').onclick=load;setInterval(load,3e5);load();
+if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+</script></body></html>
