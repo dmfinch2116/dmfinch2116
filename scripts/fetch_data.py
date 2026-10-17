@@ -128,9 +128,17 @@ def tracks(states, meta):
     return out
 
 
-def reports():
+def reports(meta):
+    errors = []
+    for hrs in (HOURS, 168, 72, 24):
+        try:
+            j = get('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=%d' % hrs)
+            break
+        except Exception as e:
+            errors.append('hours=%d: %s' % (hrs, e))
+            j = None
     out = []
-    for f in get(LSR).get('features', []):
+    for f in (j or {}).get('features', []):
         p = f['properties']
         t = p.get('typetext') or ''
         if not re.search('tornado', t, re.I) or re.search('funnel|waterspout', t, re.I):
@@ -142,12 +150,23 @@ def reports():
             continue
         out.append(dict(t=ts, city=p.get('city'), county=p.get('county'), st=p.get('state'), ef=ef_of(p.get('remark')),
                         note=(p.get('remark') or '')[:1000], ll=[c[1], c[0]]))
+    meta['lsr'] = {'rows': len((j or {}).get('features', [])), 'tornado_reports': len(out), 'errors': errors[:4]}
+    print('LSR rows:', meta['lsr']['rows'], 'tornado reports:', len(out), 'errors:', errors[:4])
     return out
 
 
 if __name__ == '__main__':
     meta = {}
-    data = {'hours': HOURS, 'reports': reports(), 'tracks': tracks(load_states(), meta), 'meta': meta}
+    reps = reports(meta)
+    try:
+        trks = tracks(load_states(), meta)
+    except Exception as e:
+        print('survey tracks failed:', e)
+        meta['dat'] = {'rows': 0, 'tornado_tracks': 0, 'errors': [str(e)[:200]]}
+        trks = []
+    if not reps and not trks and not meta['lsr']['rows']:
+        raise SystemExit('Both data sources failed; not writing a file. See messages above.')
+    data = {'hours': HOURS, 'reports': reps, 'tracks': trks, 'meta': meta}
     try:
         old = json.load(open(OUT))
         old.pop('generated', None)
@@ -159,4 +178,4 @@ if __name__ == '__main__':
         data['generated'] = datetime.utcnow().isoformat() + 'Z'
         os.makedirs(os.path.dirname(OUT), exist_ok=True)
         json.dump(data, open(OUT, 'w'), separators=(',', ':'))
-        print('wrote', len(data['reports']), 'reports,', len(data['tracks']), 'tracks')
+        print('wrote', len(reps), 'reports,', len(trks), 'tracks')
