@@ -65,22 +65,50 @@ def pos(v):
     return v if isinstance(v, (int, float)) and v > 0 else None
 
 
-def tracks(states):
+def dat_pull(where, paged):
     feats, off = [], 0
-    since = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(NOW - HOURS * 3600))
     while True:
-        q = urllib.parse.urlencode({'where': "stormdate >= timestamp '%s'" % since, 'outFields': '*', 'outSR': 4326, 'f': 'json',
-                                    'orderByFields': 'objectid', 'resultOffset': off, 'resultRecordCount': 1000})
-        j = get(DAT + '?' + q)
+        params = {'where': where, 'outFields': '*', 'outSR': 4326, 'f': 'json'}
+        if paged:
+            params.update({'orderByFields': 'objectid', 'resultOffset': off, 'resultRecordCount': 1000})
+        j = get(DAT + '?' + urllib.parse.urlencode(params))
+        if 'error' in j:
+            raise RuntimeError(json.dumps(j['error'])[:200])
         fs = j.get('features', [])
         feats += fs
-        if not fs or (len(fs) < 1000 and not j.get('exceededTransferLimit')):
-            break
+        if not paged or not fs or (len(fs) < 1000 and not j.get('exceededTransferLimit')):
+            return feats
         off += len(fs)
+
+
+def dat_fetch():
+    since = time.strftime('%Y-%m-%d %H:%M:%S', time.gmtime(NOW - HOURS * 3600))
+    attempts = [("stormdate >= timestamp '%s'" % since, True), ("stormdate >= DATE '%s'" % since[:10], True),
+                ("stormdate >= timestamp '%s'" % since, False), ('1=1', False)]
+    errors = []
+    for where, paged in attempts:
+        try:
+            feats = dat_pull(where, paged)
+            if feats:
+                return feats, errors
+            errors.append('no rows for: %s' % where)
+        except Exception as e:
+            errors.append('%s: %s' % (where, e))
+    return [], errors
+
+
+def tracks(states, meta):
+    feats, errors = dat_fetch()
+    cutoff = (NOW - HOURS * 3600) * 1000
     out, seen = [], set()
     for f in feats:
         a = f['attributes']
-        if not re.search('EF', a.get('efscale') or '', re.I):
+        efn = a.get('efnum')
+        ef = efn if isinstance(efn, int) and 0 <= efn <= 5 else ef_of(a.get('efscale'))
+        if ef is None and not re.search('EF', a.get('efscale') or '', re.I):
+            continue
+        s = a.get('starttime') or a.get('stormdate')
+        if s and s < cutoff:
             continue
         paths = [[[round(c[1], 4), round(c[0], 4)] for c in p] for p in (f.get('geometry') or {}).get('paths', []) if p]
         if not paths:
@@ -91,10 +119,12 @@ def tracks(states):
         seen.add(tid)
         sll = [a['startlat'], a['startlon']] if a.get('startlat') and a.get('startlon') else paths[0][0]
         ell = [a['endlat'], a['endlon']] if a.get('endlat') and a.get('endlon') else paths[-1][-1]
-        out.append(dict(id=tid, s=a.get('starttime') or a.get('stormdate'), e=a.get('endtime'), len=pos(a.get('length')),
+        out.append(dict(id=tid, s=s, e=a.get('endtime'), len=pos(a.get('length')),
                         width=pos(a.get('width')), inj=a.get('injuries') or 0, fat=a.get('fatalities') or 0, wind=pos(a.get('maxwind')),
-                        wfo=a.get('wfo'), ef=ef_of(a.get('efscale')), raw=a.get('efscale'), note=(a.get('comments') or '')[:1000],
+                        wfo=a.get('wfo'), ef=ef, raw=a.get('efscale'), note=(a.get('comments') or '')[:1000],
                         sll=sll, ell=ell, st=state_at(sll[0], sll[1], states) if states else None, paths=paths))
+    meta['dat'] = {'rows': len(feats), 'tornado_tracks': len(out), 'errors': errors[:4]}
+    print('DAT rows:', len(feats), 'tornado tracks:', len(out), 'errors:', errors[:4])
     return out
 
 
@@ -116,7 +146,8 @@ def reports():
 
 
 if __name__ == '__main__':
-    data = {'hours': HOURS, 'reports': reports(), 'tracks': tracks(load_states())}
+    meta = {}
+    data = {'hours': HOURS, 'reports': reports(), 'tracks': tracks(load_states(), meta), 'meta': meta}
     try:
         old = json.load(open(OUT))
         old.pop('generated', None)
