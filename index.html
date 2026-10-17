@@ -40,7 +40,7 @@ nav button{flex:1;background:0;border:0;color:var(--mut);font:inherit;font-size:
 .lg{background:rgba(10,18,32,.88);color:#fff;border-radius:12px;padding:6px 9px;font-size:11px;line-height:1.5;display:flex;flex-wrap:wrap;gap:2px 8px;max-width:190px}
 .lg i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:3px}.lg .ln{width:100%;opacity:.7}
 .sh{margin-top:8px;border:0;border-radius:10px;padding:6px 12px;background:#17294a;color:#fff;font:inherit;font-size:13px}
-.c .sh{float:right;margin:-2px 0 0 8px}.leaflet-popup-content{font:14px/1.45 'DM Sans',system-ui,sans-serif}
+.c::after{content:"";display:block;clear:both}.pn{font-size:13px;margin-top:6px;opacity:.85}.c .sh{float:right;margin:-2px 0 0 8px}.leaflet-popup-content{font:14px/1.45 'DM Sans',system-ui,sans-serif}
 #toast{position:fixed;left:50%;bottom:calc(90px + env(safe-area-inset-bottom));transform:translateX(-50%);background:#17294a;border:1px solid var(--teal);color:#fff;padding:10px 16px;border-radius:14px;z-index:2000;opacity:0;transition:.25s;pointer-events:none}#toast.on{opacity:1}
 </style></head><body>
 <header><div class="logo">↗</div><div class="hd"><div class="eye">United States · Weather Watch</div><h1>Tornadoes</h1></div><button id="rf" aria-label="Refresh">↻</button></header>
@@ -89,18 +89,21 @@ function parseReps(b){return(b.features||[]).filter(f=>/tornado/i.test(f.propert
 const slimUrls=()=>{const h=location.hostname,seg=location.pathname.split('/')[1]||'',u=[];
   if(h.endsWith('.github.io'))u.push(`https://raw.githubusercontent.com/${h.split('.')[0]}/${seg&&!seg.includes('.')?seg:h}/HEAD/data/tornadoes.json`);u.push('data/tornadoes.json');return u};
 async function slim(){for(const u of slimUrls()){try{const r=await fetch(u,{cache:'no-cache'});if(r.ok){const j=await r.json();if(j.tracks)return j}}catch{}}return null}
+function dedupe(reps){const dd=[];[...reps].sort((a,b)=>b.t-a.t).forEach(r=>{const j=dd.findIndex(x=>x.st===r.st&&x.ll[0]&&r.ll[0]&&Math.abs(x.t-r.t)<54e5&&km(x.ll,r.ll)<3);
+  j<0?dd.push(r):r.note.length>dd[j].note.length&&(dd[j]=r)});return dd}
 function merge(reps,tracks){const loose=[];tracks.forEach(t=>t.reps=[]);
   reps.forEach(r=>{if(!r.ll[0])return;let best=null,bd=8;
-    tracks.forEach(t=>{const lo=(t.s||0)-72e5,hi=(t.e||t.s||0)+72e5;if(r.t<lo||r.t>hi)return;const d=dTrack(r.ll,t);if(d<bd){bd=d;best=t}});
+    tracks.forEach(t=>{const lo=(t.s||0)-(t.e?72e5:432e5),hi=(t.e||t.s||0)+(t.e?72e5:1296e5);if(r.t<lo||r.t>hi)return;const d=dTrack(r.ll,t);if(d<bd){bd=d;best=t}});
     best?best.reps.push(r):loose.push(r)});
   I=[...tracks.map(t=>({k:'t',id:'t'+t.id,t:t.s,d:t,st:t.st||t.reps[0]?.st})),...loose.map(r=>({k:'r',id:'r'+r.t,t:r.t,d:r,st:r.st}))]}
 /* ---- popups / sharing ---- */
 const who=it=>{const r=it.k==='t'?it.d.reps[0]:it.d;return r?`${r.city}, ${r.st}`:it.st?`${STN[it.st]||it.st} (surveyed track)`:'Surveyed track'};
 function facts(d){return[d.len?d.len.toFixed(1)+' mi path':'',d.width?d.width+' yd wide':'',d.wind?d.wind+' mph max wind':''].filter(Boolean).join(' · ')}
 function hurt(d){return[d.fat?d.fat+(d.fat>1?' fatalities':' fatality'):'',d.inj?d.inj+(d.inj>1?' injuries':' injury'):''].filter(Boolean).join(' · ')}
+const PO={maxWidth:300,maxHeight:300,autoPanPadding:[24,80]};
 const shBtn=it=>`<br><button class="sh" data-id="${esc(it.id)}">Share ↗</button>`;
-function popup(it){const d=it.d;if(it.k==='r')return`<b>${esc(who(it))}</b><br>${when(d.t)}<br>${d.ef==null?'Unrated':'EF'+d.ef} · live report, awaiting survey<br>${esc(d.note.slice(0,160))}${shBtn(it)}`;
-  return`<b>${d.ef==null?'EF?':'EF'+d.ef} · NWS surveyed</b><br>${esc(who(it))}<br>${when(d.s)}${d.e?' → '+when(d.e)+'<br>On ground: '+dur(d.e-d.s):''}${facts(d)?'<br>'+facts(d):''}${hurt(d)?'<br><b>'+hurt(d)+'</b>':''}${d.wfo?'<br>NWS office: '+esc(d.wfo):''}${d.note?'<br><small>'+esc(d.note.slice(0,200))+'</small>':''}<br><small>${d.reps.length} matched report(s) · preliminary (NWS DAT)</small>${shBtn(it)}`}
+function popup(it){const d=it.d;if(it.k==='r')return`<b>${esc(who(it))}</b><br>${when(d.t)}<br>${d.ef==null?'Unrated':'EF'+d.ef} · ${/survey/i.test(d.note)?'report cites an NWS survey':'live report, awaiting survey'}<br><small>Duration: available once the NWS survey track is published</small>${d.note?'<div class="pn">'+esc(d.note)+'</div>':''}${shBtn(it)}`;
+  return`<b>${d.ef==null?'EF?':'EF'+d.ef} · NWS surveyed</b><br>${esc(who(it))}<br>${when(d.s)}${d.e?' → '+when(d.e)+'<br>On ground: '+dur(d.e-d.s):''}${facts(d)?'<br>'+facts(d):''}${hurt(d)?'<br><b>'+hurt(d)+'</b>':''}${d.wfo?'<br>NWS office: '+esc(d.wfo):''}${d.note?'<div class="pn">'+esc(d.note)+'</div>':''}<br><small>${d.reps.length} matched report(s) · preliminary (NWS DAT)</small>${shBtn(it)}`}
 async function share(id){const it=I.find(i=>i.id===id);if(!it)return;const d=it.d,url=location.origin+location.pathname+'#i='+encodeURIComponent(id);
   const text=`${d.ef==null?'Unrated':'EF'+d.ef} tornado · ${who(it)} · ${when(it.t)}${it.k==='t'&&facts(d)?' · '+facts(d):''}`;
   try{if(navigator.share)await navigator.share({title:'Tornadoes',text,url});else{await navigator.clipboard.writeText(text+'\n'+url);toast('Link copied')}}catch{}}
@@ -123,8 +126,8 @@ function render(fit){
   FW.forEach(w=>{if(w.g){w.layer=L.geoJSON(w.g,{style:{color:'#ff5252',weight:2,fillOpacity:.25}}).addTo(wl);w.layer.bindPopup(esc(w.area.slice(0,160)))}});
   const dots=[];
   FI.forEach(it=>{const c=COL[it.d.ef]||'#9e9e9e';
-    if(it.k==='t'){it.layer=L.polyline(it.d.paths,{color:c,weight:6,opacity:.9}).bindPopup(()=>popup(it)).on('click',()=>focus(it)).addTo(tl)}
-    else if(it.d.ll[0]){it.layer=L.marker(it.d.ll,{icon:L.divIcon({className:'',html:`<div class="mk" style="background:${c}"></div>`,iconSize:[22,22]})}).bindPopup(()=>popup(it));dots.push(it.layer)}});
+    if(it.k==='t'){it.layer=L.polyline(it.d.paths,{color:c,weight:6,opacity:.9}).bindPopup(()=>popup(it),PO).on('click',()=>focus(it)).addTo(tl)}
+    else if(it.d.ll[0]){it.layer=L.marker(it.d.ll,{icon:L.divIcon({className:'',html:`<div class="mk" style="background:${c}"></div>`,iconSize:[22,22]})}).bindPopup(()=>popup(it),PO);dots.push(it.layer)}});
   cg.addLayers(dots);
   const nt=FI.filter(i=>i.k==='t').length,A=tab==='a';
   $('#sl').textContent=A?'Official alerts':'Tornadoes';$('#sn').textContent=A?FW.length:FI.length;
@@ -135,7 +138,7 @@ function render(fit){
   :FI.map((it,i)=>{const d=it.d,t=it.k==='t';
     return`<div class="c" data-i="${i}" style="--k:${COL[d.ef]||'#9e9e9e'}"><span class="badge">${d.ef==null?'Unrated':'EF'+d.ef}</span>
     <b>${esc(who(it))}</b><small>${when(it.t)}${t&&d.e?' · '+dur(d.e-d.s)+' on ground':''}</small>
-    <small class="${t?'ok':'wt'}">${t?'✔ NWS surveyed'+(facts(d)?' · '+facts(d):''):'● Live report · awaiting survey'}</small>${t&&hurt(d)?`<small>${hurt(d)}</small>`:''}
+    <small class="${t?'ok':'wt'}">${t?'✔ NWS surveyed'+(facts(d)?' · '+facts(d):''):(/survey/i.test(d.note)?'● Report cites NWS survey · track pending':'● Live report · awaiting survey')}</small>${t&&hurt(d)?`<small>${hurt(d)}</small>`:''}
     <button class="sh" data-id="${esc(it.id)}">Share ↗</button></div>`})).join('')||`<div class="empty">Nothing matches right now${note}.</div>`;
   render.FI=FI;render.FW=FW;
   if(fit){const b=L.latLngBounds([]);if(A){if(wl.getLayers().length)b.extend(wl.getBounds())}else{if(tl.getLayers().length)b.extend(tl.getBounds());if(cg.getLayers().length)b.extend(cg.getBounds())}
@@ -153,7 +156,7 @@ async function load(){
   const seen=new Set(),reps=[...(sd?.reports||[]),...live].filter(r=>{const k=r.t+'|'+(r.ll[0]||0).toFixed(3)+'|'+(r.ll[1]||0).toFixed(3);return seen.has(k)?0:seen.add(k)});
   if(A.value?.features)W=parseWarn(A.value);
   $('#st').textContent=(A.value?.features&&O.value?.features?'Updated ':'Partial ')+new Date().toLocaleTimeString([],{hour:'numeric',minute:'2-digit'});
-  merge(reps,sd?.tracks||[]);render(!load.once);
+  merge(dedupe(reps),sd?.tracks||[]);render(!load.once);
   if(!load.once&&location.hash.startsWith('#i=')){const it=I.find(i=>i.id===decodeURIComponent(location.hash.slice(3)));
     if(it){$('#win').value='336';$('#sel').value='';$('#q').value='';render(false);setTimeout(()=>focus(I.find(i=>i.id===it.id)),300)}}
   load.once=1;
