@@ -79,7 +79,7 @@ const map=L.map('map',{zoomControl:false,layers:[dark],renderer:L.canvas({tolera
 L.control.zoom({position:'bottomright'}).addTo(map);L.control.layers({Dark:dark,Light:light},{'Radar':radar},{position:'topright'}).addTo(map);
 const lg=L.control({position:'bottomleft'});lg.onAdd=()=>{const d=L.DomUtil.create('div','lg');
   d.innerHTML=[0,1,2,3,4,5].map(i=>`<span><i style="background:${COL[i]}"></i>EF${i}</span>`).join('')+'<span><i style="background:#9e9e9e"></i>?</span><span class="ln">line = surveyed track · dot = report</span>';return d};lg.addTo(map);
-const wl=L.featureGroup(),tl=L.featureGroup().addTo(map),sel=L.featureGroup().addTo(map),cg=L.markerClusterGroup({showCoverageOnHover:false,maxClusterRadius:42}).addTo(map);
+const wl=L.featureGroup(),tl=L.featureGroup().addTo(map),sel=L.featureGroup().addTo(map),cg=L.markerClusterGroup({showCoverageOnHover:false,maxClusterRadius:42,removeOutsideVisibleBounds:false}).addTo(map);
 let tab='r',W=[],I=[],note='';
 /* ---- data ---- */
 function parseWarn(a){return(a.features||[]).map(f=>{const p=f.properties;return{g:f.geometry,area:p.areaDesc||'',s:Date.parse(p.effective),e:Date.parse(p.ends||p.expires),
@@ -100,7 +100,7 @@ function merge(reps,tracks){const loose=[];tracks.forEach(t=>t.reps=[]);
 const who=it=>{const r=it.k==='t'?it.d.reps[0]:it.d;return r?`${r.city}, ${r.st}`:it.st?`${STN[it.st]||it.st} (surveyed track)`:'Surveyed track'};
 function facts(d){return[d.len?d.len.toFixed(1)+' mi path':'',d.width?d.width+' yd wide':'',d.wind?d.wind+' mph max wind':''].filter(Boolean).join(' · ')}
 function hurt(d){return[d.fat?d.fat+(d.fat>1?' fatalities':' fatality'):'',d.inj?d.inj+(d.inj>1?' injuries':' injury'):''].filter(Boolean).join(' · ')}
-const PO={maxWidth:300,maxHeight:300,autoPanPadding:[24,80]};
+const po=()=>({maxWidth:300,maxHeight:Math.max(150,Math.round($('#map').clientHeight*.5)),autoPanPadding:[12,12]});
 const shBtn=it=>`<br><button class="sh" data-id="${esc(it.id)}">Share ↗</button>`;
 function popup(it){const d=it.d;if(it.k==='r')return`<b>${esc(who(it))}</b><br>${when(d.t)}<br>${d.ef==null?'Unrated':'EF'+d.ef} · ${/survey/i.test(d.note)?'report cites an NWS survey':'live report, awaiting survey'}<br><small>Duration: available once the NWS survey track is published</small>${d.note?'<div class="pn">'+esc(d.note)+'</div>':''}${shBtn(it)}`;
   return`<b>${d.ef==null?'EF?':'EF'+d.ef} · NWS surveyed</b><br>${esc(who(it))}<br>${when(d.s)}${d.e?' → '+when(d.e)+'<br>On ground: '+dur(d.e-d.s):''}${facts(d)?'<br>'+facts(d):''}${hurt(d)?'<br><b>'+hurt(d)+'</b>':''}${d.wfo?'<br>NWS office: '+esc(d.wfo):''}${d.note?'<div class="pn">'+esc(d.note)+'</div>':''}<br><small>${d.reps.length} matched report(s) · preliminary (NWS DAT)</small>${shBtn(it)}`}
@@ -126,8 +126,8 @@ function render(fit){
   FW.forEach(w=>{if(w.g){w.layer=L.geoJSON(w.g,{style:{color:'#ff5252',weight:2,fillOpacity:.25}}).addTo(wl);w.layer.bindPopup(esc(w.area.slice(0,160)))}});
   const dots=[];
   FI.forEach(it=>{const c=COL[it.d.ef]||'#9e9e9e';
-    if(it.k==='t'){it.layer=L.polyline(it.d.paths,{color:c,weight:6,opacity:.9}).bindPopup(()=>popup(it),PO).on('click',()=>focus(it)).addTo(tl)}
-    else if(it.d.ll[0]){it.layer=L.marker(it.d.ll,{icon:L.divIcon({className:'',html:`<div class="mk" style="background:${c}"></div>`,iconSize:[22,22]})}).bindPopup(()=>popup(it),PO);dots.push(it.layer)}});
+    if(it.k==='t'){it.layer=L.polyline(it.d.paths,{color:c,weight:6,opacity:.9}).bindPopup(()=>popup(it),po()).on('click',()=>focus(it)).addTo(tl)}
+    else if(it.d.ll[0]){it.layer=L.marker(it.d.ll,{icon:L.divIcon({className:'',html:`<div class="mk" style="background:${c}"></div>`,iconSize:[22,22]})}).bindPopup(()=>popup(it),po());dots.push(it.layer)}});
   cg.addLayers(dots);
   const nt=FI.filter(i=>i.k==='t').length,A=tab==='a';
   $('#sl').textContent=A?'Official alerts':'Tornadoes';$('#sn').textContent=A?FW.length:FI.length;
