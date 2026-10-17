@@ -5,7 +5,7 @@ from datetime import datetime
 
 HOURS = 336  # 14 days
 NOW = time.time()
-OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'data', 'tornadoes.json')
+OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'tornadoes.json')
 LSR = 'https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=%d' % HOURS
 DAT = 'https://services.dat.noaa.gov/arcgis/rest/services/nws_damageassessmenttoolkit/DamageViewer/FeatureServer/1/query'
 STATES = 'https://raw.githubusercontent.com/PublicaMundi/MappingAPI/master/data/geojson/us-states.json'
@@ -93,7 +93,7 @@ def tracks(states):
         ell = [a['endlat'], a['endlon']] if a.get('endlat') and a.get('endlon') else paths[-1][-1]
         out.append(dict(id=tid, s=a.get('starttime') or a.get('stormdate'), e=a.get('endtime'), len=pos(a.get('length')),
                         width=pos(a.get('width')), inj=a.get('injuries') or 0, fat=a.get('fatalities') or 0, wind=pos(a.get('maxwind')),
-                        wfo=a.get('wfo'), ef=ef_of(a.get('efscale')), raw=a.get('efscale'), note=(a.get('comments') or '')[:300],
+                        wfo=a.get('wfo'), ef=ef_of(a.get('efscale')), raw=a.get('efscale'), note=(a.get('comments') or '')[:1000],
                         sll=sll, ell=ell, st=state_at(sll[0], sll[1], states) if states else None, paths=paths))
     return out
 
@@ -111,7 +111,7 @@ def reports():
         except Exception:
             continue
         out.append(dict(t=ts, city=p.get('city'), county=p.get('county'), st=p.get('state'), ef=ef_of(p.get('remark')),
-                        note=(p.get('remark') or '')[:300], ll=[c[1], c[0]]))
+                        note=(p.get('remark') or '')[:1000], ll=[c[1], c[0]]))
     return out
 
 
@@ -129,4 +129,3 @@ if __name__ == '__main__':
         os.makedirs(os.path.dirname(OUT), exist_ok=True)
         json.dump(data, open(OUT, 'w'), separators=(',', ':'))
         print('wrote', len(data['reports']), 'reports,', len(data['tracks']), 'tracks')
-
