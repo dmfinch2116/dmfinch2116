@@ -131,7 +131,7 @@ function render(fit){
   cg.addLayers(dots);
   const nt=FI.filter(i=>i.k==='t').length,A=tab==='a';
   $('#sl').textContent=A?'Official alerts':'Tornadoes';$('#sn').textContent=A?FW.length:FI.length;
-  $('#ss').textContent=A?'active tornado warnings':`${FI.length===1?'tornado':'tornadoes'} in selected period · ${nt} surveyed`+(load.noData?' · ⚠ limited data: data build not run':'');
+  $('#ss').textContent=A?'active tornado warnings':`${FI.length===1?'tornado':'tornadoes'} in selected period · ${nt} surveyed`+(load.noData?' · ⚠ limited data: data build not run':load.warn||'');
   $('#mt').textContent=A?'Warning map':'Tornado map';$('#win').disabled=A;$('#sort').disabled=A;
   $('#list').innerHTML=(A?FW.map((w,i)=>`<div class="c" data-w="${i}" style="--k:#ff5252"><span class="badge">${w.obs==='OBSERVED'?'CONFIRMED':'RADAR'}</span><b>${esc(w.area)}</b>
     <small>${when(w.s)} → ${when(w.e)} · ${w.e>now?dur(w.e-now)+' left':'expired'} (window ${dur(w.e-w.s)})</small>${w.threat?`<small>Damage threat: ${esc(w.threat)}</small>`:''}</div>`)
@@ -149,7 +149,7 @@ async function load(){
   const [A,S,O]=await Promise.allSettled([
     fetch('https://api.weather.gov/alerts/active?event=Tornado%20Warning').then(r=>r.json()),slim(),
     fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours=6').then(r=>r.json())]);
-  const sd=S.value;let live=O.value?.features?parseReps(O.value):[];
+  const sd=S.value;load.warn=sd&&!(sd.tracks||[]).length?' · ⚠ data file has no survey tracks'+(sd.meta?.dat?.errors?.[0]?': '+String(sd.meta.dat.errors[0]).slice(0,90):''):'';let live=O.value?.features?parseReps(O.value):[];
   if(!sd){note=' · survey data not built yet — run the “Update tornado data” workflow once';
     try{live=parseReps(await fetch('https://mesonet.agron.iastate.edu/geojson/lsr.geojson?hours='+Math.min(168,+$('#win').value)).then(r=>r.json()))}catch{}}
   load.noData=!sd;
